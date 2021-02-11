@@ -283,13 +283,13 @@ DriverEntry(
 #endif
 
 		FindCode(pKernelBase, KernelSize, ShellCode_pKiDisplayBlueScreen, sizeof(ShellCode_pKiDisplayBlueScreen), (PVOID*)&pKiDisplayBlueScreen);
-		FindCode(pKiDisplayBlueScreen, 0x200, ShellCode_Back, sizeof(ShellCode_Back), &pBack);
-		FindCode(pKiDisplayBlueScreen, 0x200, ShellCode_Text, sizeof(ShellCode_Text), &pText);
+		FindCode(&pKiDisplayBlueScreen, 0x200, ShellCode_Back, sizeof(ShellCode_Back), &pBack);
+		FindCode(&pKiDisplayBlueScreen, 0x200, ShellCode_Text, sizeof(ShellCode_Text), &pText);
 
 		if (pKiDisplayBlueScreen && pBack && pText)
 		{
 			KIRQL _Irql = KeRaiseIrqlToDpcLevel();
-			/*while (TRUE)
+			while (TRUE)
 				for (UCHAR x = 0; x < BV_MAX_COLORS; x++)
 					for (UCHAR y = 0; y < BV_MAX_COLORS; y++)
 					{
@@ -302,31 +302,15 @@ DriverEntry(
 
 						* (PBYTE)((ULONG_PTR)pText + 1) = y;
 						RecoverWP(Irql);
-						pKiDisplayBlueScreen(0, TRUE, "Hello\n", "World!", "gt428 & Mitsuha");
+						pKiDisplayBlueScreen(0, TRUE, "FUCK YOU WIN7!!\n", "FUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUCK!", "QWQ");
 
 						KeStallExecutionProcessor(600);
-					}*/
-
-			KIRQL Irql = RemoveWP();
-#ifdef _WIN64
-			* (PBYTE)((ULONG_PTR)pBack + 4) = BV_COLOR_LIGHT_RED;
-#else
-			* (PBYTE)((ULONG_PTR)pBack + 1) = x;
-#endif
-
-			* (PBYTE)((ULONG_PTR)pText + 1) = BV_COLOR_WHITE;
-			RecoverWP(Irql);
-
-			pKiDisplayBlueScreen(0, TRUE, "Happy New Year!\n", "New Year!\nbilibili!", "gt428 & Mitsuha");
-
-			while (TRUE)
-				;
-
-			KeLowerIrql(_Irql);
 		}
+			KeLowerIrql(_Irql);
+	}
 		else
 			ntStatus = STATUS_NOT_FOUND;
-	}
+}
 
 	return ntStatus;
 }
