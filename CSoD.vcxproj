@@ -192,6 +192,10 @@
   <ItemGroup>
     <ClCompile Include="CSoD.c" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="BOOTVID.h" />
+    <ClInclude Include="Includes.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
