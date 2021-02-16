@@ -1,3 +1,4 @@
+#pragma once
 #include <ntifs.h>
 
 #define CSoD_POOL_TAG 'DoSC'

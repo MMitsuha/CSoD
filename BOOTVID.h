@@ -1,3 +1,4 @@
+#pragma once
 #include <ntifs.h>
 
 #define BV_COLOR_BLACK          0
