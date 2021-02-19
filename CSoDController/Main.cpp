@@ -10,8 +10,8 @@ wmain(
 	if (hDevice != INVALID_HANDLE_VALUE)
 	{
 		CSoD_DATA Data = { 0 };
-		Data.BackColor = BV_COLOR_MAGENTA;
-		Data.TextColor = BV_COLOR_RED;
+		Data.BackColor = BV_COLOR_COLORFUL;
+		Data.TextColor = BV_COLOR_COLORFUL;
 		strcpy_s(Data.Text, "Hello World!");
 
 		DWORD dwReturned = 0;

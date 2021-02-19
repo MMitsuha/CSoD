@@ -1,5 +1,6 @@
 #pragma once
 #include <ntifs.h>
+#include <intrin.h>
 
 #define CSoD_POOL_TAG 'DoSC'
 #define _CSoD_WHILE 0

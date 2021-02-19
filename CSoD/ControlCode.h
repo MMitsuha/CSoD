@@ -49,6 +49,8 @@
 #define BV_COLOR_NONE           16
 #define BV_MAX_COLORS           16
 
+#define BV_COLOR_COLORFUL       255
+
 #define SCREEN_WIDTH  640
 #define SCREEN_HEIGHT 400
 
