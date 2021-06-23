@@ -63,8 +63,8 @@
 
 typedef struct _CSoD_DATA
 {
-	UCHAR BackColor;															//背景色(BV_COLOR_COLORFUL为动态变化)
-	UCHAR TextColor;															//文字色(BV_COLOR_COLORFUL为动态变化)
+	UCHAR BackColor;
+	UCHAR TextColor;
 
-	CHAR Text[(SCREEN_WIDTH / CHAR_WIDTH) * (SCREEN_HEIGHT / CHAR_HEIGHT)];		//文字
+	CHAR Text[(SCREEN_WIDTH / CHAR_WIDTH) * (SCREEN_HEIGHT / CHAR_HEIGHT)];
 }CSoD_DATA, * PCSoD_DATA;
